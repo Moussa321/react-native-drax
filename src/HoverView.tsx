@@ -1,20 +1,19 @@
-import React, { PropsWithChildren, ReactNode } from "react";
+import React, { PropsWithChildren } from "react";
 import { StyleSheet } from "react-native";
 import Reanimated, {
 	SharedValue,
-	useAnimatedReaction,
+	useAnimatedRef,
 } from "react-native-reanimated";
 
 import { useDraxContext } from "./hooks";
-import { updateHoverPosition } from "./math";
+import { useContent } from "./hooks/useContent";
 import {
 	TReanimatedHoverViewProps,
 	DraxViewDragStatus,
 	Position,
 } from "./types";
-import { useContent } from "./hooks/useContent";
 
-export const ReanimatedHoverView = ({
+export const HoverView = ({
 	children,
 	hoverPosition,
 	renderHoverContent,
@@ -24,36 +23,9 @@ export const ReanimatedHoverView = ({
 }: Omit<PropsWithChildren<TReanimatedHoverViewProps>, "internalProps"> & {
 	id: string;
 	hoverPosition: SharedValue<Position>;
+	scrollPositionOffset?: Position;
 }) => {
-	const {
-		parentPosition,
-		getAbsoluteViewData,
-		startPosition,
-		getTrackingDragged,
-	} = useDraxContext();
-
-	const viewData = getAbsoluteViewData(props.id);
-
-	const draggedId = getTrackingDragged()?.id;
-	const id = props.id;
-	const absoluteMeasurements = viewData?.absoluteMeasurements;
-
-	useAnimatedReaction(
-		() => parentPosition.value,
-		(position) => {
-			id &&
-				draggedId === id &&
-				updateHoverPosition(
-					position,
-					hoverPosition,
-					startPosition,
-					props,
-					scrollPosition,
-					absoluteMeasurements,
-				);
-		},
-	);
-
+	const { updateHoverViewMeasurements } = useDraxContext();
 	const { combinedStyle, animatedHoverStyle, renderedChildren, dragStatus } =
 		useContent({
 			draxViewProps: {
@@ -65,6 +37,8 @@ export const ReanimatedHoverView = ({
 				...props,
 			},
 		});
+
+	const viewRef = useAnimatedRef<Reanimated.View>();
 
 	if (!(props.draggable && !props.noHover)) {
 		return null;
@@ -80,6 +54,14 @@ export const ReanimatedHoverView = ({
 	return (
 		<Reanimated.View
 			{...props}
+			ref={viewRef}
+			onLayout={(measurements) => {
+				!props?.disableHoverViewMeasurementsOnLayout &&
+					updateHoverViewMeasurements({
+						id: props.id,
+						measurements: { ...measurements.nativeEvent.layout },
+					});
+			}}
 			style={[StyleSheet.absoluteFill, combinedStyle, animatedHoverStyle]}
 			pointerEvents="none"
 		>

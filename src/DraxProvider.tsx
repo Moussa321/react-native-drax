@@ -14,7 +14,7 @@ import {
 } from "react-native-reanimated";
 
 import { DraxContext } from "./DraxContext";
-import { ReanimatedHoverView } from "./HoverView";
+import { HoverView } from "./HoverView";
 import { useDraxState, useDraxRegistry } from "./hooks";
 import { getRelativePosition } from "./math";
 import {
@@ -59,6 +59,7 @@ export const DraxProvider = ({
 		registerView,
 		updateViewProtocol,
 		updateViewMeasurements,
+		updateHoverViewMeasurements,
 		resetReceiver,
 		resetDrag,
 		startDrag,
@@ -116,6 +117,7 @@ export const DraxProvider = ({
 					grabOffset: dragged.tracking.grabOffset,
 					grabOffsetRatio: dragged.tracking.grabOffsetRatio,
 					hoverPosition: dragged.tracking.hoverPosition.value,
+					data: dragged.data,
 				};
 
 				// Prepare base drag event data.
@@ -155,6 +157,7 @@ export const DraxProvider = ({
 						payload: receiver.data.protocol.receiverPayload,
 						receiveOffset: trackingReceiver.receiveOffset,
 						receiveOffsetRatio: trackingReceiver.receiveOffsetRatio,
+						data: receiver.data,
 					};
 
 					// Add receiver data to monitor event stub.
@@ -191,6 +194,7 @@ export const DraxProvider = ({
 										receiveOffsetRatio:
 											oldReceiver.tracking
 												.receiveOffsetRatio,
+										data: oldReceiver.data,
 									},
 								};
 
@@ -234,6 +238,7 @@ export const DraxProvider = ({
 							receiveOffset: oldReceiver.tracking.receiveOffset,
 							receiveOffsetRatio:
 								oldReceiver.tracking.receiveOffsetRatio,
+							data: oldReceiver.data,
 						},
 					};
 
@@ -575,6 +580,7 @@ export const DraxProvider = ({
 						grabOffset: dragged.tracking.grabOffset,
 						grabOffsetRatio: dragged.tracking.grabOffsetRatio,
 						hoverPosition: dragged.tracking.hoverPosition.value,
+						data: draggedData,
 					};
 
 					// Get data for receiver view (if any) before we reset.
@@ -596,9 +602,8 @@ export const DraxProvider = ({
 							id: receiver.id,
 							parentId: receiver.data.parentId,
 							payload: receiver.data.protocol.receiverPayload,
-							receiveOffset: receiver.tracking.receiveOffset,
-							receiveOffsetRatio:
-								receiver.tracking.receiveOffsetRatio,
+							...receiver.tracking,
+							data: receiver.data,
 						};
 
 						const eventData: DraxDragWithReceiverEventData = {
@@ -683,6 +688,7 @@ export const DraxProvider = ({
 							receiveOffset: receiver.tracking.receiveOffset,
 							receiveOffsetRatio:
 								receiver.tracking.receiveOffsetRatio,
+							data: receiver.data,
 						};
 
 						const receivedDragExitEventData: DraxDragWithReceiverEndEventData =
@@ -842,6 +848,7 @@ export const DraxProvider = ({
 							dragTranslationRatio,
 							parentId: draggedData.parentId,
 							payload: draggedData.protocol.dragPayload,
+							data: draggedData,
 						},
 					};
 					draggedData.protocol.onDragStart?.(eventData);
@@ -957,6 +964,7 @@ export const DraxProvider = ({
 		unregisterView,
 		updateViewProtocol,
 		updateViewMeasurements,
+		updateHoverViewMeasurements,
 		handleGestureEvent,
 		handleGestureStateChange,
 		rootViewRef,
@@ -969,12 +977,14 @@ export const DraxProvider = ({
 			getHoverItems(allViewStates).map(
 				(viewData, index) =>
 					viewData && (
-						<ReanimatedHoverView
+						<HoverView
 							key={viewData.id || index}
-							scrollPosition={viewData?.scrollPosition}
 							{...(viewData?.protocol || {})}
 							id={viewData.id}
-							hoverPosition={viewData?.protocol.hoverPosition}
+							scrollPosition={viewData?.scrollPosition}
+							scrollPositionOffset={
+								viewData?.scrollPositionOffset
+							}
 						/>
 					),
 			),

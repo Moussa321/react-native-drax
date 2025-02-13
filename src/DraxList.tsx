@@ -14,8 +14,6 @@ import React, {
 import { ListRenderItemInfo, FlatList, StyleSheet } from "react-native";
 import Reanimated, {
 	useAnimatedReaction,
-	useAnimatedRef,
-	useAnimatedScrollHandler,
 	useAnimatedStyle,
 	useSharedValue,
 	withTiming,
@@ -23,11 +21,8 @@ import Reanimated, {
 
 import { DraxSubprovider } from "./DraxSubprovider";
 import { DraxView } from "./DraxView";
-import { useDraxId } from "./hooks";
-import {
-	defaultListItemLongPressDelay,
-	INITIAL_REANIMATED_POSITION,
-} from "./params";
+import { useDraxScrollHandler } from "./hooks/useDraxScrollHandler";
+import { defaultListItemLongPressDelay } from "./params";
 import {
 	DraxListProps,
 	DraxMonitorEventData,
@@ -40,12 +35,8 @@ import {
 	DraxProtocolDragEndResponse,
 	DraxSnapbackTargetPreset,
 	isWithCancelledFlag,
+	DraxEventDraggedViewData,
 } from "./types";
-
-interface Shift {
-	targetValue: number;
-	animatedValue: number;
-}
 
 interface ListItemPayload {
 	index: number;
@@ -62,7 +53,7 @@ const DraxListUnforwarded = <T extends unknown>(
 	forwardedRef: ForwardedRef<Reanimated.FlatList<T>>,
 ): ReactNode => {
 	const {
-		data: _data,
+		data,
 		style,
 		flatListStyle,
 		itemStyles,
@@ -79,32 +70,12 @@ const DraxListUnforwarded = <T extends unknown>(
 		itemsDraggable = true,
 		lockItemDragsToMainAxis = false,
 		longPressDelay = defaultListItemLongPressDelay,
+		experimentalItemLayoutAnimation,
 		...flatListProps
 	} = props;
 
-	const data = (() => {
-		if (_data) {
-			if ("length" in _data) {
-				return _data;
-			}
-
-			return _data.value;
-		}
-	})();
-
 	// Copy the value of the horizontal property for internal use.
-	const horizontal = (() => {
-		if (flatListProps.horizontal) {
-			if (
-				typeof flatListProps.horizontal !== "boolean" &&
-				"value" in flatListProps.horizontal
-			) {
-				return flatListProps.horizontal.value ?? false;
-			}
-		}
-
-		return flatListProps.horizontal ?? false;
-	})();
+	const horizontal = flatListProps.horizontal ?? false;
 
 	// Get the item count for internal use.
 	const itemCount = data?.length ?? 0;
@@ -112,46 +83,11 @@ const DraxListUnforwarded = <T extends unknown>(
 	// Set a sensible default for reorderable prop.
 	const reorderable = reorderableProp ?? onItemReorder !== undefined;
 
-	// The unique identifer for this list's Drax view.
-	const id = useDraxId(idProp);
-
-	// FlatList, used for scrolling and measuring children.
-	const flatListRef = useAnimatedRef<FlatList>();
-
-	// Container view measurements, for scrolling by percentage.
-	const containerMeasurementsRef = useRef<DraxViewMeasurements | undefined>(
-		undefined,
-	);
-
-	// Content size, for scrolling by percentage.
-	const contentSizeRef = useRef<Position | undefined>(undefined);
-	// Scroll position, for Drax bounds checking and auto-scrolling.
-
-	const scrollPosition = useSharedValue<Position>(
-		INITIAL_REANIMATED_POSITION.value,
-	);
-
-	const scrollHandler = useAnimatedScrollHandler({
-		onScroll: (event) => {
-			scrollPosition.value.y = event.contentOffset.y;
-			scrollPosition.value.x = event.contentOffset.x;
-		},
-		onMomentumBegin: (e) => {
-			console.log("The list is moving.");
-		},
-		onMomentumEnd: (e) => {
-			console.log("The list stopped moving.");
-		},
-	});
-
 	// Original index of the currently dragged list item, if any.
-	const draggedItemRef = useRef<number | undefined>(undefined);
+	const draggedItem = useSharedValue<number | undefined>(undefined);
 
 	// Auto-scrolling state.
 	const scrollStateRef = useRef(AutoScrollDirection.None);
-
-	// Auto-scrolling interval.
-	const scrollIntervalRef = useRef<NodeJS.Timeout | undefined>(undefined);
 
 	// List item measurements, for determining shift.
 	const itemMeasurementsRef = useRef<(DraxViewMeasurements | undefined)[]>(
@@ -206,153 +142,6 @@ const DraxListUnforwarded = <T extends unknown>(
 		setOriginalIndexes(data ? [...Array(data.length).keys()] : []);
 	}, [data]);
 
-	// Apply the reorder cache to the data.
-	const reorderedData = useMemo(() => {
-		// console.log('refresh sorted data');
-		if (!id || !data) {
-			return null;
-		}
-		if (data.length !== originalIndexes.length) {
-			return data;
-		}
-		return originalIndexes.map((index) => data[index]);
-	}, [id, data, originalIndexes]);
-
-	// Set the currently dragged list item.
-	const setDraggedItem = useCallback((originalIndex: number) => {
-		draggedItemRef.current = originalIndex;
-	}, []);
-
-	// Clear the currently dragged list item.
-	const resetDraggedItem = useCallback(() => {
-		draggedItemRef.current = undefined;
-	}, []);
-
-	// Drax view renderItem wrapper.
-	const renderItem = useCallback(
-		(info: ListRenderItemInfo<T>) => {
-			const { index, item } = info;
-			const originalIndex = originalIndexes[index];
-			const {
-				style: itemStyle,
-				draggingStyle = defaultStyles.draggingStyle,
-				dragReleasedStyle = defaultStyles.dragReleasedStyle,
-				...otherStyleProps
-			} = itemStyles ?? {};
-
-			const RenderItem = () => {
-				const animatedValue = useSharedValue(0);
-
-				useAnimatedReaction(
-					() => shiftsRef.value,
-					() => {
-						animatedValue.value = withTiming(
-							shiftsRef.value[index],
-							{ duration: 200 },
-						);
-					},
-				);
-
-				// Get shift transform for list item at index.
-				const shiftTransformStyle = useAnimatedStyle(() => {
-					const shift = animatedValue.value ?? 0;
-					return {
-						transform: horizontal
-							? [{ translateX: shift }]
-							: [{ translateY: shift }],
-					};
-				});
-
-				return (
-					<DraxView
-						style={[itemStyle, shiftTransformStyle]}
-						draggingStyle={draggingStyle}
-						dragReleasedStyle={dragReleasedStyle}
-						{...otherStyleProps}
-						longPressDelay={longPressDelay}
-						lockDragXPosition={
-							lockItemDragsToMainAxis && !horizontal
-						}
-						lockDragYPosition={
-							lockItemDragsToMainAxis && horizontal
-						}
-						draggable={itemsDraggable}
-						payload={{ index, originalIndex }}
-						{...(viewPropsExtractor?.(item) ?? {})}
-						onDragEnd={resetDraggedItem}
-						onDragDrop={resetDraggedItem}
-						onMeasure={(measurements) => {
-							if (originalIndex !== undefined) {
-								// console.log(`measuring [${index}, ${originalIndex}]: (${measurements?.x}, ${measurements?.y})`);
-								itemMeasurementsRef.current[originalIndex] =
-									measurements;
-							}
-						}}
-						registration={(registration) => {
-							if (registration && originalIndex !== undefined) {
-								// console.log(`registering [${index}, ${originalIndex}], ${registration.id}`);
-								registrationsRef.current[originalIndex] =
-									registration;
-								registration.measure();
-							}
-						}}
-						renderContent={(contentProps) =>
-							renderItemContent(info, contentProps)
-						}
-						renderHoverContent={
-							renderItemHoverContent &&
-							((hoverContentProps) =>
-								renderItemHoverContent(info, hoverContentProps))
-						}
-					/>
-				);
-			};
-
-			return <RenderItem></RenderItem>;
-		},
-		[
-			originalIndexes,
-			itemStyles,
-			viewPropsExtractor,
-			resetDraggedItem,
-			itemsDraggable,
-			renderItemContent,
-			renderItemHoverContent,
-			longPressDelay,
-			lockItemDragsToMainAxis,
-			horizontal,
-		],
-	);
-
-	// Track the size of the container view.
-	const onMeasureContainer = useCallback(
-		(measurements: DraxViewMeasurements | undefined) => {
-			containerMeasurementsRef.current = measurements;
-		},
-		[],
-	);
-
-	// Track the size of the content.
-	const onContentSizeChange = useCallback((width: number, height: number) => {
-		contentSizeRef.current = { x: width, y: height };
-	}, []);
-
-	// Set FlatList and node handle refs.
-	const setFlatListRefs = useCallback(
-		(ref: any) => {
-			flatListRef.current = ref;
-			if (forwardedRef) {
-				if (typeof forwardedRef === "function") {
-					forwardedRef(ref);
-				} else {
-					// eslint-disable-next-line no-param-reassign
-					forwardedRef.current = ref;
-				}
-			}
-		},
-		[forwardedRef],
-	);
-
 	// Handle auto-scrolling on interval.
 	const doScroll = useCallback(() => {
 		const containerMeasurements = containerMeasurementsRef.current;
@@ -390,30 +179,145 @@ const DraxListUnforwarded = <T extends unknown>(
 		}
 	}, [horizontal]);
 
-	// Start the auto-scrolling interval.
-	const startScroll = useCallback(() => {
-		if (scrollIntervalRef.current) {
-			return;
-		}
-		doScroll();
-		scrollIntervalRef.current = setInterval(doScroll, 250);
-	}, [doScroll]);
+	const {
+		id,
+		containerMeasurementsRef,
+		contentSizeRef,
+		onContentSizeChange,
+		onMeasureContainer,
+		onScroll,
+		scrollRef: flatListRef,
+		scrollPosition,
+		setScrollRefs,
+		startScroll,
+		stopScroll,
+	} = useDraxScrollHandler<FlatList<T>>({
+		idProp,
+		onContentSizeChangeProp: props.onContentSizeChange,
+		onScrollProp,
+		forwardedRef,
+		doScroll,
+	});
 
-	// Stop the auto-scrolling interval.
-	const stopScroll = useCallback(() => {
-		if (scrollIntervalRef.current) {
-			clearInterval(scrollIntervalRef.current);
-			scrollIntervalRef.current = undefined;
+	// Apply the reorder cache to the data.
+	const reorderedData = useMemo(() => {
+		// console.log('refresh sorted data');
+		if (!id || !data) {
+			return null;
 		}
+		if (data.length !== originalIndexes.length) {
+			return data;
+		}
+		return originalIndexes.map((index) => data[index]).filter(Boolean);
+	}, [id, data, originalIndexes]);
+
+	// Set the currently dragged list item.
+	const setDraggedItem = useCallback((originalIndex: number) => {
+		draggedItem.value = originalIndex;
 	}, []);
 
-	// If startScroll changes, refresh our interval.
-	useEffect(() => {
-		if (scrollIntervalRef.current) {
-			stopScroll();
-			startScroll();
-		}
-	}, [stopScroll, startScroll]);
+	// Clear the currently dragged list item.
+	const resetDraggedItem = useCallback(() => {
+		draggedItem.value = undefined;
+	}, []);
+
+	// Drax view renderItem wrapper.
+	const renderItem = useCallback(
+		(info: ListRenderItemInfo<T>) => {
+			const { index, item } = info;
+			const originalIndex = originalIndexes[index];
+			const {
+				style: itemStyle,
+				draggingStyle = defaultStyles.draggingStyle,
+				dragReleasedStyle = defaultStyles.dragReleasedStyle,
+				...otherStyleProps
+			} = itemStyles ?? {};
+
+			const RenderItem = () => {
+				const animatedValue = useSharedValue(0);
+
+				useAnimatedReaction(
+					() => shiftsRef.value,
+					() => {
+						const toValue = shiftsRef.value[index];
+
+						if (typeof draggedItem.value === "number")
+							animatedValue.value = withTiming(toValue, {
+								duration: 200,
+							});
+					},
+				);
+
+				// Get shift transform for list item at index.
+				const shiftTransformStyle = useAnimatedStyle(() => {
+					const shift = animatedValue.value ?? 0;
+					return {
+						transform: horizontal
+							? [{ translateX: shift }]
+							: [{ translateY: shift }],
+					};
+				});
+
+				return (
+					<DraxView
+						style={[itemStyle, shiftTransformStyle]}
+						draggingStyle={draggingStyle}
+						dragReleasedStyle={dragReleasedStyle}
+						{...otherStyleProps}
+						longPressDelay={longPressDelay}
+						lockDragXPosition={
+							lockItemDragsToMainAxis && !horizontal
+						}
+						lockDragYPosition={
+							lockItemDragsToMainAxis && horizontal
+						}
+						draggable={itemsDraggable}
+						payload={{ index, originalIndex, item: data?.[index] }}
+						{...(viewPropsExtractor?.(item) ?? {})}
+						onDragEnd={resetDraggedItem}
+						onDragDrop={resetDraggedItem}
+						onMeasure={(measurements) => {
+							if (originalIndex !== undefined) {
+								// console.log(`measuring [${index}, ${originalIndex}]: (${measurements?.x}, ${measurements?.y})`);
+								itemMeasurementsRef.current[originalIndex] =
+									measurements;
+							}
+						}}
+						registration={(registration) => {
+							if (registration && originalIndex !== undefined) {
+								// console.log(`registering [${index}, ${originalIndex}], ${registration.id}`);
+								registrationsRef.current[originalIndex] =
+									registration;
+								registration.measure();
+							}
+						}}
+						renderContent={(contentProps) =>
+							renderItemContent(info, contentProps)
+						}
+						renderHoverContent={
+							renderItemHoverContent &&
+							((hoverContentProps) =>
+								renderItemHoverContent(info, hoverContentProps))
+						}
+					/>
+				);
+			};
+
+			return <RenderItem />;
+		},
+		[
+			originalIndexes,
+			itemStyles,
+			viewPropsExtractor,
+			resetDraggedItem,
+			itemsDraggable,
+			renderItemContent,
+			renderItemHoverContent,
+			longPressDelay,
+			lockItemDragsToMainAxis,
+			horizontal,
+		],
+	);
 
 	// Reset all shift values.
 	const resetShifts = useCallback(() => {
@@ -428,11 +332,23 @@ const DraxListUnforwarded = <T extends unknown>(
 				originalIndex: fromOriginalIndex,
 			}: ListItemPayload,
 			{ index: toIndex }: ListItemPayload,
+			dragged: DraxEventDraggedViewData,
 		) => {
 			const { width = 50, height = 50 } =
-				itemMeasurementsRef.current[fromOriginalIndex] ?? {};
+				itemMeasurementsRef.current[fromOriginalIndex] ||
+				dragged.data.hoverMeasurements ||
+				{};
 
-			const offset = horizontal ? width : height;
+			const flattenedStyles =
+				StyleSheet.flatten(flatListProps.contentContainerStyle) || {};
+
+			//@ts-ignore
+			const rowGap = flattenedStyles.rowGap ?? flattenedStyles.gap ?? 0;
+			const columnGap =
+				//@ts-ignore
+				flattenedStyles.columnGap ?? flattenedStyles.gap ?? 0;
+
+			const offset = horizontal ? width + columnGap : height + rowGap;
 
 			shiftsRef.value = originalIndexes.map((originalIndex, index) => {
 				const shift = shiftsRef.value[originalIndex];
@@ -444,11 +360,6 @@ const DraxListUnforwarded = <T extends unknown>(
 				}
 				if (shift !== newTargetValue) {
 					return newTargetValue;
-					// Animated.timing(shift.animatedValue, {
-					// 	duration: 200,
-					// 	toValue: newTargetValue,
-					// 	useNativeDriver: true,
-					// }).start();
 				}
 				return shift;
 			});
@@ -549,9 +460,20 @@ const DraxListUnforwarded = <T extends unknown>(
 			const { dragged, receiver } = eventData;
 
 			// Check if we need to handle this drag end.
-			if (reorderable && dragged.parentId === id) {
+			if (reorderable) {
 				// Determine list indexes of dragged/received items, if any.
-				const fromPayload = dragged.payload as ListItemPayload;
+				const fromPayload: ListItemPayload = {
+					/**
+					 * Indexing should start from zero and stop at `itemCount - 1`, but
+					 * we're also handling external drag by adding a fake item index,
+					 * resulting to `itemCount`.
+					 */
+					index: dragged.payload.index ?? itemCount,
+					originalIndex: dragged.payload.originalIndex ?? itemCount,
+				};
+
+				const isExternalDrag = !dragged.payload.originalIndex;
+
 				const toPayload =
 					receiver?.parentId === id
 						? (receiver.payload as ListItemPayload)
@@ -559,14 +481,19 @@ const DraxListUnforwarded = <T extends unknown>(
 
 				const { index: fromIndex, originalIndex: fromOriginalIndex } =
 					fromPayload;
+
 				const { index: toIndex, originalIndex: toOriginalIndex } =
 					toPayload ?? {};
+
 				const toItem =
 					toOriginalIndex !== undefined
 						? data?.[toOriginalIndex]
 						: undefined;
 
+				const fromItem = data?.[fromOriginalIndex] || dragged.payload;
+
 				// Reset all shifts and call callback, regardless of whether toPayload exists.
+				isExternalDrag && resetDraggedItem();
 				resetShifts();
 				if (totalDragEnd) {
 					onItemDragEnd?.({
@@ -577,7 +504,8 @@ const DraxListUnforwarded = <T extends unknown>(
 							? eventData.cancelled
 							: false,
 						index: fromIndex,
-						item: data?.[fromOriginalIndex],
+						item: fromItem,
+						isExternalDrag,
 					});
 				}
 
@@ -587,9 +515,10 @@ const DraxListUnforwarded = <T extends unknown>(
 						onItemDragPositionChange?.({
 							...eventData,
 							index: fromIndex,
-							item: data?.[fromOriginalIndex],
+							item: fromItem,
 							toIndex: undefined,
 							previousIndex: draggedToIndex.current,
+							isExternalDrag,
 						});
 					}
 					draggedToIndex.current = undefined;
@@ -612,9 +541,10 @@ const DraxListUnforwarded = <T extends unknown>(
 						setOriginalIndexes(newOriginalIndexes);
 						onItemReorder?.({
 							fromIndex,
-							fromItem: data[fromOriginalIndex],
+							fromItem,
 							toIndex: toIndex!,
-							toItem: data[toOriginalIndex!],
+							toItem,
+							isExternalDrag,
 						});
 					}
 					return snapbackTarget;
@@ -651,6 +581,7 @@ const DraxListUnforwarded = <T extends unknown>(
 					...eventData,
 					index,
 					item: data?.[originalIndex],
+					isExternalDrag: false,
 				});
 			}
 		},
@@ -661,10 +592,28 @@ const DraxListUnforwarded = <T extends unknown>(
 	const onMonitorDragOver = useCallback(
 		(eventData: DraxMonitorEventData) => {
 			const { dragged, receiver, monitorOffsetRatio } = eventData;
+
 			// First, check if we need to shift items.
-			if (reorderable && dragged.parentId === id) {
-				// One of our list items is being dragged.
-				const fromPayload: ListItemPayload = dragged.payload;
+			if (reorderable) {
+				const fromPayload: ListItemPayload = {
+					/**
+					 * Indexing should start from zero and stop at `itemCount - 1`, but
+					 * we're also handling for external drag by adding a fake item index,
+					 * resulting to `itemCount`.
+					 */
+					index: dragged.payload.index ?? itemCount,
+					originalIndex: dragged.payload.originalIndex ?? itemCount,
+				};
+
+				if (!draggedItem.value) {
+					/** DraxList is receiving external drag  */
+					setDraggedItem(itemCount);
+				}
+
+				const fromItem =
+					data?.[fromPayload.originalIndex] || dragged.payload;
+
+				const isExternalDrag = !dragged.payload.originalIndex;
 
 				// Find its current position index in the list, if any.
 				const toPayload: ListItemPayload | undefined =
@@ -677,14 +626,15 @@ const DraxListUnforwarded = <T extends unknown>(
 						...eventData,
 						toIndex,
 						index: fromPayload.index,
-						item: data?.[fromPayload.originalIndex],
+						item: fromItem,
 						previousIndex: draggedToIndex.current,
+						isExternalDrag,
 					});
 					draggedToIndex.current = toIndex;
 				}
 
 				// Update shift transforms for items in the list.
-				updateShifts(fromPayload, toPayload ?? fromPayload);
+				updateShifts(fromPayload, toPayload ?? fromPayload, dragged);
 			}
 
 			// Next, see if we need to auto-scroll.
@@ -756,7 +706,6 @@ const DraxListUnforwarded = <T extends unknown>(
 				parent={{
 					id,
 					viewRef: {
-						//@ts-ignore
 						current: flatListRef?.current?.getNativeScrollRef?.(),
 					},
 				}}
@@ -764,19 +713,9 @@ const DraxListUnforwarded = <T extends unknown>(
 				<Reanimated.FlatList
 					{...flatListProps}
 					style={flatListStyle}
-					ref={setFlatListRefs}
+					ref={setScrollRefs}
 					renderItem={renderItem}
-					onScroll={scrollHandler}
-					// onScroll={(ev) => {
-					// 	scrollHandler(ev);
-					// 	if (onScrollProp) {
-					// 		if ("value" in onScrollProp) {
-					// 			onScrollProp?.value?.(ev);
-					// 		} else {
-					// 			onScrollProp(ev);
-					// 		}
-					// 	}
-					// }}
+					onScroll={onScroll}
 					onContentSizeChange={onContentSizeChange}
 					data={reorderedData}
 				/>

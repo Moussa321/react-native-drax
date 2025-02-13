@@ -2,9 +2,11 @@ import React, { useEffect, memo, ReactNode } from "react";
 import Reanimated, { useSharedValue } from "react-native-reanimated";
 
 import { PanGestureDetector } from "./PanGestureDetector";
-import { useDraxId, useDraxContext } from "./hooks";
+import { useDraxContext, useDraxId } from "./hooks";
 import { useContent } from "./hooks/useContent";
+import { useDraxProtocol } from "./hooks/useDraxProtocol";
 import { useMeasurements } from "./hooks/useMeasurements";
+import { generateRandomId } from "./math";
 import { defaultLongPressDelay } from "./params";
 import { DraxViewProps, Position } from "./types";
 
@@ -49,7 +51,7 @@ export const DraxView = memo((props: DraxViewProps): ReactNode => {
 			draggable={draggable}
 			longPressDelay={props.longPressDelay ?? defaultLongPressDelay}
 		>
-			<ReanimatedView
+			<DraxReanimatedView
 				id={id}
 				{...props}
 				draggable={draggable}
@@ -60,55 +62,37 @@ export const DraxView = memo((props: DraxViewProps): ReactNode => {
 	);
 });
 
-interface IReanimatedView extends DraxViewProps {
-	id: string;
-}
+type IReanimatedView = DraxViewProps & { id: string };
 
-export const ReanimatedView = memo((props: IReanimatedView): JSX.Element => {
+export const DraxReanimatedView = memo((props: IReanimatedView): ReactNode => {
 	const hoverPosition = useSharedValue<Position>({ x: 0, y: 0 });
+	const updateViewProtocol = useDraxProtocol(props, hoverPosition);
 
-	// Connect with Drax.
-	const { updateViewProtocol, registerView, unregisterView } =
-		useDraxContext();
-
-	const { onLayout, viewRef, measureWithHandler } = useMeasurements(props);
+	const { registerView, unregisterView } = useDraxContext();
+	const { onLayout, viewRef } = useMeasurements(props);
 
 	const { combinedStyle, renderedChildren } = useContent({
 		draxViewProps: { ...props, hoverPosition },
 		viewRef,
 	});
 
-	useEffect(() => {
-		/** 🪲BUG:
-		 * For some reason, the Staging zone from the ColorDragDrop example loses its measurements,
-		 * and we need to force refresh on them */
-		measureWithHandler?.();
-	}, [combinedStyle]);
+	// useEffect(() => {
+	// 	/** @todo 🪲BUG:
+	// 	 * For some reason, the Staging zone from the ColorDragDrop example loses its measurements,
+	// 	 * and we need to force refresh on them */
+	// 	measureWithHandler?.();
+	// }, [combinedStyle]);
 
-	// Report updates to our protocol callbacks when we have an id and whenever the props change.
 	useEffect(() => {
-		updateViewProtocol({
-			id: props.id,
-			protocol: {
-				...props,
-				hoverPosition,
-				dragPayload: props.dragPayload ?? props.payload,
-				receiverPayload: props.receiverPayload ?? props.payload,
-			},
-		});
-
-		/** 🪲BUG:
-		 * Ugly hack to update hover view in case props change.
+		/** @todo 🪲BUG:
+		 * Ugly hack to update hover views.
+		 * Mostly useful when their props change and we need a forced refresh
 		 */
-		registerView({ id: "bsbsbs" });
-		unregisterView({ id: "bsbsbs" });
-	}, [
-		updateViewProtocol,
-		hoverPosition,
-		props,
-		registerView,
-		unregisterView,
-	]);
+		updateViewProtocol();
+		const fakeId = generateRandomId();
+		registerView({ id: fakeId });
+		unregisterView({ id: fakeId });
+	}, [updateViewProtocol, registerView, unregisterView]);
 
 	return (
 		<Reanimated.View
