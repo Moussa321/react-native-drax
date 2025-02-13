@@ -26,25 +26,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReanimatedHoverView = void 0;
+exports.HoverView = void 0;
 const react_1 = __importDefault(require("react"));
 const react_native_1 = require("react-native");
 const react_native_reanimated_1 = __importStar(require("react-native-reanimated"));
 const hooks_1 = require("./hooks");
-const math_1 = require("./math");
-const types_1 = require("./types");
 const useContent_1 = require("./hooks/useContent");
-const ReanimatedHoverView = ({ children, hoverPosition, renderHoverContent, renderContent, scrollPosition, ...props }) => {
-    const { parentPosition, getAbsoluteViewData, startPosition, getTrackingDragged, } = (0, hooks_1.useDraxContext)();
-    const viewData = getAbsoluteViewData(props.id);
-    const draggedId = getTrackingDragged()?.id;
-    const id = props.id;
-    const absoluteMeasurements = viewData?.absoluteMeasurements;
-    (0, react_native_reanimated_1.useAnimatedReaction)(() => parentPosition.value, (position) => {
-        id &&
-            draggedId === id &&
-            (0, math_1.updateHoverPosition)(position, hoverPosition, startPosition, props, scrollPosition, absoluteMeasurements);
-    });
+const types_1 = require("./types");
+const HoverView = ({ children, hoverPosition, renderHoverContent, renderContent, scrollPosition, ...props }) => {
+    const { updateHoverViewMeasurements } = (0, hooks_1.useDraxContext)();
     const { combinedStyle, animatedHoverStyle, renderedChildren, dragStatus } = (0, useContent_1.useContent)({
         draxViewProps: {
             children,
@@ -55,6 +45,7 @@ const ReanimatedHoverView = ({ children, hoverPosition, renderHoverContent, rend
             ...props,
         },
     });
+    const viewRef = (0, react_native_reanimated_1.useAnimatedRef)();
     if (!(props.draggable && !props.noHover)) {
         return null;
     }
@@ -62,6 +53,12 @@ const ReanimatedHoverView = ({ children, hoverPosition, renderHoverContent, rend
         typeof dragStatus === "undefined") {
         return null;
     }
-    return (react_1.default.createElement(react_native_reanimated_1.default.View, { ...props, style: [react_native_1.StyleSheet.absoluteFill, combinedStyle, animatedHoverStyle], pointerEvents: "none" }, renderedChildren));
+    return (react_1.default.createElement(react_native_reanimated_1.default.View, { ...props, ref: viewRef, onLayout: (measurements) => {
+            !props?.disableHoverViewMeasurementsOnLayout &&
+                updateHoverViewMeasurements({
+                    id: props.id,
+                    measurements: { ...measurements.nativeEvent.layout },
+                });
+        }, style: [react_native_1.StyleSheet.absoluteFill, combinedStyle, animatedHoverStyle], pointerEvents: "none" }, renderedChildren));
 };
-exports.ReanimatedHoverView = ReanimatedHoverView;
+exports.HoverView = HoverView;

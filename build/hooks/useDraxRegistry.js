@@ -50,7 +50,8 @@ const getAbsoluteMeasurementsForViewFromRegistry = (registry, { measurements, pa
     }
     const { x, y, width, height } = measurements;
     const { x: parentX, y: parentY } = parentMeasurements;
-    const { x: offsetX, y: offsetY } = parentViewData.scrollPosition?.value || {
+    const { x: offsetX, y: offsetY } = parentViewData.protocol
+        .scrollPositionValue || {
         x: 0,
         y: 0,
     };
@@ -187,63 +188,19 @@ const getTrackingMonitorsFromRegistry = (registry) => registry.drag?.monitorIds
 /** Get the array of hover items for dragged and released views */
 const getHoverItemsFromRegistry = (registry, viewIds) => {
     return viewIds.map((viewId) => {
-        const scrollPosition = Object.values(registry.releaseById).find((release) => release.viewId === viewId)?.scrollPosition;
+        const releaseData = Object.values(registry.releaseById).find((release) => release.viewId === viewId);
+        const scrollPosition = releaseData?.scrollPosition;
+        const scrollPositionOffset = releaseData?.scrollPositionOffset;
         const viewData = getViewDataFromRegistry(registry, viewId);
-        const parentData = getAbsoluteViewDataFromRegistry(registry, viewData?.parentId);
         if (viewData) {
-            // if (HoverView) {
             return {
                 id: viewId,
                 ...viewData,
-                scrollPosition: scrollPosition?.value
-                    ? scrollPosition
-                    : parentData?.scrollPosition,
+                scrollPosition,
+                scrollPositionOffset,
             };
-            // }
         }
     });
-    // const hoverItems = [];
-    // // Find all released view hover items, in order from oldest to newest.
-    // registry.releaseIds.forEach(releaseId => {
-    //   const release = registry.releaseById[releaseId];
-    //   if (release) {
-    //     const { viewId, hoverPosition } = release;
-    //     const releasedData = getAbsoluteViewDataFromRegistry(registry, viewId);
-    //     if (releasedData) {
-    //       const {
-    //         protocol: { internalRenderHoverView },
-    //         measurements,
-    //       } = releasedData;
-    //       if (internalRenderHoverView) {
-    //         hoverItems.push({
-    //           hoverPosition,
-    //           internalRenderHoverView,
-    //           key: releaseId,
-    //           id: viewId,
-    //           dimensions: extractDimensions(measurements),
-    //         });
-    //       }
-    //     }
-    //   }
-    // });
-    // // Find the currently dragged hover item.
-    // const { id: draggedId, data: draggedData } = getTrackingDraggedFromRegistry(registry) ?? {};
-    // if (draggedData) {
-    //   const {
-    //     protocol: { internalRenderHoverView },
-    //     measurements,
-    //   } = draggedData;
-    //   if (draggedId && internalRenderHoverView) {
-    //     hoverItems.push({
-    //       internalRenderHoverView,
-    //       key: `dragged-hover-${draggedId}`,
-    //       id: draggedId,
-    //       hoverPosition: registry.drag!.hoverPosition,
-    //       dimensions: extractDimensions(measurements),
-    //     });
-    //   }
-    // }
-    // return hoverItems;
 };
 /**
  * Get the absolute position of a drag already in progress from touch
@@ -310,6 +267,14 @@ const updateViewMeasurementsInRegistry = (registry, { id, measurements }) => {
         registry.viewDataById[id].measurements = measurements;
     }
 };
+/** Update a view's measurements. */
+const updateHoverViewMeasurementsInRegistry = (registry, { id, measurements }) => {
+    const existingData = getViewDataFromRegistry(registry, id);
+    if (existingData) {
+        // console.log(`Update ${id} measurements: @(${measurements?.x}, ${measurements?.y}) ${measurements?.width}x${measurements?.height}`);
+        registry.viewDataById[id].hoverMeasurements = measurements;
+    }
+};
 /** Reset the receiver in drag tracking, if any. */
 const resetReceiverInRegistry = ({ drag }) => {
     if (!drag) {
@@ -344,6 +309,12 @@ const createReleaseInRegistry = (registry, release) => {
     const releaseId = (0, math_1.generateRandomId)();
     registry.releaseIds.push(releaseId);
     registry.releaseById[releaseId] = release;
+    /**
+     * @todo remove BUG workaround
+     * @summary Force HoverView state to get the latest scrollPosition
+     */
+    registerViewInRegistry(registry, { id: "fakefakefake" });
+    unregisterViewInRegistry(registry, { id: "fakefakefake" });
     return releaseId;
 };
 /** Stop tracking a release, given its unique identifier. */
@@ -361,7 +332,7 @@ const getReleasesFromRegistry = (registry) => {
     });
 };
 /** Reset drag tracking, if any. */
-const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTargetPreset.Default) => {
+const resetDragInRegistry = (registry, snapTarget = types_1.DraxSnapbackTargetPreset.Default) => {
     const { drag } = registry;
     if (!drag) {
         return;
@@ -375,19 +346,18 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
     registry.drag = undefined;
     // Determine if/where/how to snapback.
     let snapping = false;
-    if (snapbackTarget !== types_1.DraxSnapbackTargetPreset.None && draggedData) {
-        const { onSnapbackEnd, snapbackAnimator, animateSnapback = true, snapbackDelay = params_1.defaultSnapbackDelay, snapbackDuration = params_1.defaultSnapbackDuration, } = draggedData.protocol;
+    if (snapTarget !== types_1.DraxSnapbackTargetPreset.None && draggedData) {
+        const { onSnapEnd, snapAnimator, animateSnap = true, snapDelay = params_1.defaultSnapbackDelay, snapDuration = params_1.defaultSnapbackDuration, } = draggedData.protocol;
         const parentData = getAbsoluteViewDataFromRegistry(registry, draggedData?.parentId);
         const scrollPosition = (receiverData
             ? receiverParentData?.scrollPosition
             : parentData?.scrollPosition) || params_1.INITIAL_REANIMATED_POSITION;
-        if (animateSnapback) {
+        if (animateSnap) {
             let toValue;
-            if ((0, types_1.isPosition)(snapbackTarget)) {
+            if ((0, types_1.isPosition)(snapTarget)) {
                 // Snapback to specified target.
-                toValue = snapbackTarget;
+                toValue = snapTarget;
             }
-            // if (animateSnapforward) {
             else if (receiverData) {
                 // Snap forward to the center of the receiver
                 toValue = {
@@ -397,28 +367,6 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
                     y: receiverData.absoluteMeasurements.y +
                         receiverData.absoluteMeasurements.height / 2 -
                         draggedData.absoluteMeasurements.height / 2,
-                };
-                hoverPosition.value = {
-                    x: hoverPosition.value.x +
-                        (receiverParentData?.scrollPosition ===
-                            parentData?.scrollPosition
-                            ? 0
-                            : receiverParentData?.scrollPosition?.value.x ||
-                                0) -
-                        (receiverParentData?.scrollPosition ===
-                            parentData?.scrollPosition
-                            ? 0
-                            : parentData?.scrollPosition?.value.x || 0),
-                    y: hoverPosition.value.y +
-                        (receiverParentData?.scrollPosition ===
-                            parentData?.scrollPosition
-                            ? 0
-                            : receiverParentData?.scrollPosition?.value.y ||
-                                0) +
-                        (receiverParentData?.scrollPosition ===
-                            parentData?.scrollPosition
-                            ? 0
-                            : parentData?.scrollPosition?.value.y || 0),
                 };
             }
             else {
@@ -431,22 +379,31 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
                     y: draggedData.absoluteMeasurements.y,
                 };
             }
-            toValue = {
-                x: toValue.x + (scrollPosition?.value.x || 0),
-                y: toValue.y + (scrollPosition?.value.y || 0),
-            };
-            if (toValue && snapbackDuration > 0) {
+            if (toValue && snapDuration > 0) {
                 snapping = true;
                 // Add a release to tracking.
                 const releaseId = createReleaseInRegistry(registry, {
                     hoverPosition,
                     viewId: draggedId,
                     scrollPosition,
+                    scrollPositionOffset: {
+                        x: scrollPosition.value.x,
+                        y: scrollPosition.value.y,
+                    },
                 });
                 const onSnapAnimationEnd = (_finished) => {
+                    const snapPayload = {
+                        dragged: { data: draggedData, ...drag },
+                        receiver: receiver &&
+                            receiverData && {
+                            data: receiverData,
+                            ...receiver,
+                        },
+                    };
+                    delete snapPayload.dragged.receiver;
                     // // Call the snap end handlers, regardless of whether animation of finished.
-                    onSnapbackEnd?.();
-                    receiverData?.protocol?.onReceiveSnapbackEnd?.();
+                    onSnapEnd?.(snapPayload);
+                    receiverData?.protocol?.onReceiveSnapEnd?.(snapPayload);
                     // Remove the release from tracking, regardless of whether animation finished.
                     deleteReleaseInRegistry(registry, releaseId);
                     // Resetting the hover position updates the view state for the released view to be inactive.
@@ -457,19 +414,19 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
                     (0, react_native_reanimated_1.runOnJS)(onSnapAnimationEnd)(finished);
                 };
                 // Animate the released hover snapback.
-                if (snapbackAnimator) {
-                    snapbackAnimator({
+                if (snapAnimator) {
+                    snapAnimator({
                         hoverPosition,
                         toValue,
-                        delay: snapbackDelay,
-                        duration: snapbackDuration,
+                        delay: snapDelay,
+                        duration: snapDuration,
                         scrollPosition,
                         finishedCallback,
                     });
                 }
                 else {
-                    hoverPosition.value = (0, react_native_reanimated_1.withDelay)(snapbackDelay, (0, react_native_reanimated_1.withTiming)(toValue, {
-                        duration: snapbackDuration,
+                    hoverPosition.value = (0, react_native_reanimated_1.withDelay)(snapDelay, (0, react_native_reanimated_1.withTiming)(toValue, {
+                        duration: snapDuration,
                         reduceMotion: react_native_reanimated_1.ReduceMotion.System,
                     }, finishedCallback), react_native_reanimated_1.ReduceMotion.System);
                 }
@@ -493,11 +450,9 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
     }
     else {
         viewStateUpdate.dragStatus = types_1.DraxViewDragStatus.Inactive;
-        if (viewStateUpdate.hoverPosition?.value) {
-            // viewStateUpdate.hoverPosition.value = { x: 0, y: 0 };
-        }
         viewStateUpdate.grabOffset = undefined;
         viewStateUpdate.grabOffsetRatio = undefined;
+        hoverPosition.value = { x: 0, y: 0 };
     }
     // stateDispatch(actions.updateViewState({
     // 	viewStateUpdate,
@@ -506,17 +461,12 @@ const resetDragInRegistry = (registry, snapbackTarget = types_1.DraxSnapbackTarg
 };
 /** Start tracking a drag. */
 const startDragInRegistry = (registry, { dragAbsolutePosition, dragParentPosition, draggedId, grabOffset, grabOffsetRatio, }) => {
-    const { stateDispatch } = registry;
     resetDragInRegistry(registry);
     const dragTranslation = { x: 0, y: 0 };
     const dragTranslationRatio = { x: 0, y: 0 };
     const dragOffset = grabOffset;
     const draggedData = getViewDataFromRegistry(registry, draggedId);
     const hoverPosition = draggedData?.protocol.hoverPosition || params_1.INITIAL_REANIMATED_POSITION;
-    // hoverPosition.value = {
-    // 	x: dragAbsolutePosition.x - grabOffset.x,
-    // 	y: dragAbsolutePosition.y - grabOffset.y,
-    // };
     registry.drag = {
         absoluteStartPosition: dragAbsolutePosition,
         parentStartPosition: dragParentPosition,
@@ -531,20 +481,6 @@ const startDragInRegistry = (registry, { dragAbsolutePosition, dragParentPositio
         receiver: undefined,
         monitorIds: [],
     };
-    // stateDispatch(actions.updateTrackingStatus({ dragging: true }));
-    // stateDispatch(actions.updateViewState({
-    // 	id: draggedId,
-    // 	viewStateUpdate: {
-    // 		dragAbsolutePosition,
-    // 		dragTranslation,
-    // 		dragTranslationRatio,
-    // 		dragOffset,
-    // 		grabOffset,
-    // 		grabOffsetRatio,
-    // 		hoverPosition,
-    // 		dragStatus: DraxViewDragStatus.Dragging,
-    // 	},
-    // }));
     return {
         dragAbsolutePosition,
         dragTranslation,
@@ -555,7 +491,7 @@ const startDragInRegistry = (registry, { dragAbsolutePosition, dragParentPositio
 };
 /** Update drag position. */
 const updateDragPositionInRegistry = (registry, dragAbsolutePosition) => {
-    const { drag, stateDispatch } = registry;
+    const { drag } = registry;
     if (!drag) {
         return;
     }
@@ -563,9 +499,8 @@ const updateDragPositionInRegistry = (registry, dragAbsolutePosition) => {
     if (!dragged) {
         return;
     }
-    const { absoluteMeasurements, parentId } = dragged.data;
-    const parentData = getAbsoluteViewDataFromRegistry(registry, parentId);
-    const { draggedId, grabOffset, hoverPosition } = drag;
+    const { absoluteMeasurements } = dragged.data;
+    const { grabOffset, hoverPosition } = drag;
     const dragTranslation = {
         x: dragAbsolutePosition.x - drag.absoluteStartPosition.x,
         y: dragAbsolutePosition.y - drag.absoluteStartPosition.y,
@@ -583,22 +518,9 @@ const updateDragPositionInRegistry = (registry, dragAbsolutePosition) => {
     drag.dragTranslationRatio = dragTranslationRatio;
     drag.dragOffset = dragOffset;
     hoverPosition.value = {
-        x: dragAbsolutePosition.x -
-            grabOffset.x +
-            (parentData?.scrollPosition?.value.x || 0),
-        y: dragAbsolutePosition.y -
-            grabOffset.y +
-            (parentData?.scrollPosition?.value.y || 0),
+        x: dragAbsolutePosition.x - grabOffset.x,
+        y: dragAbsolutePosition.y - grabOffset.y,
     };
-    // stateDispatch(actions.updateViewState({
-    // 	id: draggedId,
-    // 	viewStateUpdate: {
-    // 		dragAbsolutePosition,
-    // 		dragTranslation,
-    // 		dragTranslationRatio,
-    // 		dragOffset,
-    // 	},
-    // }));
 };
 /** Update receiver for a drag. */
 const updateReceiverInRegistry = (registry, receiver, dragged) => {
@@ -606,8 +528,7 @@ const updateReceiverInRegistry = (registry, receiver, dragged) => {
     if (!drag) {
         return undefined;
     }
-    const { relativePosition, relativePositionRatio, id: receiverId, data: receiverData, } = receiver;
-    const { parentId: receiverParentId, protocol: { receiverPayload }, } = receiverData;
+    const { relativePosition, relativePositionRatio, id: receiverId, } = receiver;
     const { id: draggedId, data: draggedData } = dragged;
     const { parentId: draggedParentId, protocol: { dragPayload }, } = draggedData;
     const oldReceiver = drag.receiver;
@@ -618,6 +539,7 @@ const updateReceiverInRegistry = (registry, receiver, dragged) => {
             id: draggedId,
             parentId: draggedParentId,
             payload: dragPayload,
+            data: draggedData,
         },
         receiveOffset,
         receiveOffsetRatio,
@@ -639,22 +561,7 @@ const updateReceiverInRegistry = (registry, receiver, dragged) => {
             receiveOffsetRatio,
         };
         receiverUpdate.receiveStatus = types_1.DraxViewReceiveStatus.Receiving;
-        // stateDispatch(actions.updateTrackingStatus({ receiving: true }));
     }
-    // stateDispatch(actions.updateViewState({
-    // 	id: receiverId,
-    // 	viewStateUpdate: receiverUpdate,
-    // }));
-    // stateDispatch(actions.updateViewState({
-    // 	id: draggedId,
-    // 	viewStateUpdate: {
-    // 		draggingOverReceiver: {
-    // 			id: receiverId,
-    // 			parentId: receiverParentId,
-    // 			payload: receiverPayload,
-    // 		},
-    // 	},
-    // }));
     return drag.receiver;
 };
 /** Set the monitors for a drag. */
@@ -722,6 +629,8 @@ const useDraxRegistry = (stateDispatch) => {
     const updateViewProtocol = (0, react_1.useCallback)((payload) => updateViewProtocolInRegistry(registryRef.current, payload), []);
     /** Update a view's measurements. */
     const updateViewMeasurements = (0, react_1.useCallback)((payload) => updateViewMeasurementsInRegistry(registryRef.current, payload), []);
+    /** Update a hover view's measurements. */
+    const updateHoverViewMeasurements = (0, react_1.useCallback)((payload) => updateHoverViewMeasurementsInRegistry(registryRef.current, payload), []);
     /**
      *
      * Imperative methods with potential state reactions.
@@ -760,6 +669,7 @@ const useDraxRegistry = (stateDispatch) => {
         registerView,
         updateViewProtocol,
         updateViewMeasurements,
+        updateHoverViewMeasurements,
         resetReceiver,
         resetDrag,
         startDrag,
@@ -780,6 +690,7 @@ const useDraxRegistry = (stateDispatch) => {
         registerView,
         updateViewProtocol,
         updateViewMeasurements,
+        updateHoverViewMeasurements,
         resetReceiver,
         resetDrag,
         startDrag,

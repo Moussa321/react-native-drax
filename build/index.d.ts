@@ -5,3 +5,4 @@ export { DraxProvider } from "./DraxProvider";
 export { DraxScrollView } from "./DraxScrollView";
 export { DraxSubprovider } from "./DraxSubprovider";
 export { DraxView } from "./DraxView";
+export * from "./hooks";

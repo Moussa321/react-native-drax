@@ -53,7 +53,14 @@ const useStatus = ({ id, otherDraggingStyle, otherDraggingWithReceiverStyle, oth
     const updateReceivingState = (0, react_1.useCallback)((position) => {
         const dragged = getTrackingDragged();
         if (position.x === 0 && position.y === 0) {
-            setReceiveStatus(types_1.DraxViewReceiveStatus.Inactive);
+            const releaseViews = getReleaseViews();
+            if (releaseViews?.includes(id) ||
+                dragged?.tracking.draggedId === id) {
+                setDragSatatus(types_1.DraxViewDragStatus.Released);
+            }
+            else {
+                setReceiveStatus(types_1.DraxViewReceiveStatus.Inactive);
+            }
             setAnyReceiving(false);
         }
         else if (dragged) {

@@ -1,5 +1,5 @@
-import { RefObject, ReactNode, PropsWithChildren } from "react";
-import { ViewProps, ViewStyle, StyleProp, ScrollViewProps, ListRenderItemInfo, View, FlatList, ScrollView } from "react-native";
+import { RefObject, ReactNode, PropsWithChildren, ElementRef } from "react";
+import { ViewProps, ViewStyle, StyleProp, ScrollViewProps, ListRenderItemInfo, View, ScrollView, FlatListProps, ScrollViewComponent } from "react-native";
 import { LongPressGestureHandlerStateChangeEvent, LongPressGesture, GestureStateChangeEvent, PanGestureHandlerEventPayload, GestureUpdateEvent } from "react-native-gesture-handler";
 import { StyleProps, SharedValue, FlatListPropsWithLayout, AnimatedStyle } from "react-native-reanimated";
 import { PayloadActionCreator, ActionType } from "typesafe-actions";
@@ -28,7 +28,7 @@ export interface ViewDimensions {
 export interface DraxViewMeasurements extends Position, ViewDimensions {
 }
 /** Data about a view involved in a Drax event */
-export interface DraxEventViewData {
+export interface DraxEventViewData extends DraxPayloadViewData {
     /** The view's id */
     id: string;
     /** The view's parent id, if any */
@@ -83,8 +83,8 @@ export interface DraxDragWithReceiverEventData extends DraxDragEventData {
 /** Data about a Drax drag/receive end event */
 export interface DraxDragWithReceiverEndEventData extends DraxDragWithReceiverEventData, WithCancelledFlag {
 }
-/** Data about a Drax snapback, used for custom animations */
-export interface DraxSnapbackData {
+/** Data about a Drax snap, used for custom animations */
+export interface DraxSnapData {
     hoverPosition: SharedValue<Position>;
     toValue: Position;
     delay: number;
@@ -111,16 +111,16 @@ export interface DraxMonitorEndEventData extends DraxMonitorEventData, WithCance
 /** Data about a Drax monitor drag-drop event */
 export interface DraxMonitorDragDropEventData extends Required<DraxMonitorEventData> {
 }
-/** Preset values for specifying snapback targets without a Position */
+/** Preset values for specifying snap targets without a Position */
 export declare enum DraxSnapbackTargetPreset {
     Default = 0,
     None = 1
 }
-/** Target for snapback hover view release animation: none, default, or specified Position */
+/** Target for snap hover view release animation: none, default, or specified Position */
 export type DraxSnapbackTarget = DraxSnapbackTargetPreset | Position;
 /**
  * Response type for Drax protocol callbacks involving end of a drag,
- * allowing override of default release snapback behavior.
+ * allowing override of default release snap behavior.
  */
 export type DraxProtocolDragEndResponse = void | DraxSnapbackTarget;
 /** Props provided to an internal render function for a hovering copy of a Drax view */
@@ -159,9 +159,17 @@ export interface DraxRenderContentProps {
 /** Props provided to a render function for a hovering copy of a Drax view, compatible with DraxRenderContentProps */
 export interface DraxRenderHoverContentProps extends DraxRenderContentProps {
 }
+type DraxPayloadViewData = {
+    data: DraxAbsoluteViewData;
+};
+type DraxSnapPayload = {
+    dragged: DraxPayloadViewData & Omit<DraxTrackingDrag, "receiver">;
+    receiver?: DraxPayloadViewData & DraxTrackingReceiver;
+};
 /** Callback protocol for communicating Drax events to views */
 export interface DraxProtocol {
     hoverPosition: SharedValue<Position>;
+    scrollPositionValue?: Position;
     /** Called in the dragged view when a drag action begins */
     onDragStart?: (data: DraxDragEventData) => void;
     /** Called in the dragged view repeatedly while dragged, not over any receiver */
@@ -176,10 +184,10 @@ export interface DraxProtocol {
     onDragEnd?: (data: DraxDragEndEventData) => DraxProtocolDragEndResponse;
     /** Called in the dragged view when drag ends over a receiver */
     onDragDrop?: (data: DraxDragWithReceiverEventData) => DraxProtocolDragEndResponse;
-    /** Called in the dragged view when drag release snapback ends */
-    onSnapbackEnd?: () => void;
-    /** Called in the receiver view when drag release snapback ends */
-    onReceiveSnapbackEnd?: () => void;
+    /** Called in the dragged view when drag release snap ends */
+    onSnapEnd?: (snapPayload: DraxSnapPayload) => void;
+    /** Called in the receiver view when drag release snap ends */
+    onReceiveSnapEnd?: (snapPayload: DraxSnapPayload) => void;
     /** Called in the receiver view each time an item is initially dragged over it */
     onReceiveDragEnter?: (data: DraxDragWithReceiverEventData) => void;
     /** Called in the receiver view repeatedly while an item is dragged over it */
@@ -200,18 +208,20 @@ export interface DraxProtocol {
     onMonitorDragEnd?: (data: DraxMonitorEndEventData) => DraxProtocolDragEndResponse;
     /** Called in the monitor view when drag ends over it while over a receiver */
     onMonitorDragDrop?: (data: DraxMonitorDragDropEventData) => DraxProtocolDragEndResponse;
-    /** Whether or not to animate hover view snapback after drag release, defaults to true */
-    animateSnapback?: boolean;
-    /** Delay in ms before hover view snapback begins after drag is released */
-    snapbackDelay?: number;
-    /** Duration in ms for hover view snapback to complete */
-    snapbackDuration?: number;
-    /** Function returning custom hover view snapback animation */
-    snapbackAnimator?: (data: DraxSnapbackData) => void;
+    /** Whether or not to animate hover view snap after drag release, defaults to true */
+    animateSnap?: boolean;
+    /** Delay in ms before hover view snap begins after drag is released */
+    snapDelay?: number;
+    /** Duration in ms for hover view snap to complete */
+    snapDuration?: number;
+    /** Function returning custom hover view snap animation */
+    snapAnimator?: (data: DraxSnapData) => void;
     /** Payload that will be delivered to receiver views when this view is dragged; overrides `payload` */
     dragPayload?: any;
     /** Payload that will be delievered to dragged views when this view receives them; overrides `payload` */
     receiverPayload?: any;
+    /** Convenience prop to provide one value for both `dragPayload` and `receiverPayload` */
+    payload?: any;
     /** Whether the view can be dragged */
     draggable?: boolean;
     /** Whether the view can receive drags */
@@ -222,13 +232,14 @@ export interface DraxProtocol {
     lockDragXPosition?: boolean;
     /** If true, lock drag's y position */
     lockDragYPosition?: boolean;
-    /** Internal hover view props */
-    HoverView?: () => ReactNode;
+    /**
+     * Disable automatic HoverView measurements which occur on the `onLayout` event.
+     * Could be useful in case the area size that activates the drag might differ from the actual HoverView
+     * content size. */
+    disableHoverViewMeasurementsOnLayout?: boolean;
 }
 /** Props for components implementing the protocol */
 export interface DraxProtocolProps extends Partial<Omit<DraxProtocol, "internalRenderHoverView">> {
-    /** Convenience prop to provide one value for both `dragPayload` and `receiverPayload` */
-    payload?: any;
 }
 /** The states a dragged view can be in */
 export declare enum DraxViewDragStatus {
@@ -256,6 +267,8 @@ export interface DraxViewData {
     protocol: DraxProtocol;
     /** The view's measurements for bounds checking */
     measurements?: DraxViewMeasurements;
+    /** The hover view's measurements for bounds checking */
+    hoverMeasurements?: DraxViewMeasurements;
 }
 /** Information about a view, plus its clipped absolute measurements */
 export interface DraxAbsoluteViewData extends Omit<DraxViewData, "measurements">, Required<Pick<DraxViewData, "measurements">> {
@@ -321,6 +334,7 @@ export interface DraxTrackingRelease {
      *  Will be receiver's parent scroll on succesful drops,
      *  else will be dragged parent scroll */
     scrollPosition: SharedValue<Position>;
+    scrollPositionOffset: Position;
 }
 /** Tracking status for reference in views */
 export interface DraxTrackingStatus {
@@ -330,7 +344,7 @@ export interface DraxTrackingStatus {
     receiving: boolean;
 }
 /** Render-related state for a registered view */
-export interface DraxViewState {
+export interface DraxViewState extends Partial<DraxPayloadViewData> {
     id?: string;
     /** Current drag status of the view: Dragged, Released, or Inactive */
     dragStatus: DraxViewDragStatus;
@@ -347,7 +361,6 @@ export interface DraxViewState {
     /** If being dragged, the relative offset/dimensions ratio of where the view was grabbed */
     grabOffsetRatio?: Position;
     /** The position in absolute coordinates of the dragged hover view (dragAbsolutePosition - grabOffset) */
-    hoverPosition: SharedValue<Position>;
     /** Data about the receiver this view is being dragged over, if any */
     draggingOverReceiver?: DraxEventViewData;
     /** Current receive status of the view: Receiving or Inactive */
@@ -358,6 +371,8 @@ export interface DraxViewState {
     receiveOffsetRatio?: Position;
     /** Data about the dragged item this view is receiving, if any */
     receivingDrag?: DraxEventViewData;
+    /** Data about the released dragged item  */
+    releasedDragTracking?: DraxTrackingDrag;
 }
 /** Drax provider render state; maintains render-related data */
 export interface DraxState {
@@ -522,6 +537,8 @@ export interface DraxContextValue {
     updateViewProtocol: (payload: UpdateViewProtocolPayload) => void;
     /** Update view measurements for a registered Drax view */
     updateViewMeasurements: (payload: UpdateViewMeasurementsPayload) => void;
+    /** Update hover view measurements for a registered Drax view */
+    updateHoverViewMeasurements: (payload: UpdateViewMeasurementsPayload) => void;
     /** Handle gesture state change for a registered Drax view */
     handleGestureStateChange: (id: string) => (event: GestureStateChangeEvent<PanGestureHandlerEventPayload>) => void;
     /** Handle gesture event for a registered Drax view */
@@ -552,7 +569,7 @@ export interface DraxParentView {
     /** Drax view id of the parent */
     id: string;
     /** View Ref of the parent, for measuring relative to */
-    viewRef: RefObject<FlatList | ScrollView | View | null>;
+    viewRef: RefObject<ElementRef<typeof ScrollViewComponent> | ScrollView | View | null | undefined>;
 }
 /** Function that receives a Drax view measurement */
 export interface DraxViewMeasurementHandler {
@@ -560,24 +577,25 @@ export interface DraxViewMeasurementHandler {
 }
 /** Layout-related style keys that are omitted from hover view styles */
 export type LayoutStyleKey = "margin" | "marginHorizontal" | "marginVertical" | "marginLeft" | "marginRight" | "marginTop" | "marginBottom" | "marginStart" | "marginEnd" | "left" | "right" | "top" | "bottom" | "flex" | "flexBasis" | "flexDirection" | "flexGrow" | "flexShrink";
+type TSDraxtyles = ViewStyle | StyleProp<StyleProps> | null | StyleProp<ViewStyle> | StyleProp<AnimatedStyle<StyleProp<ViewStyle>>>;
 /** Style for a Animated.View used for a hover view */
-export type AnimatedViewStyleWithoutLayout = Omit<StyleProps, LayoutStyleKey>;
+export type AnimatedViewStyleWithoutLayout = Omit<TSDraxtyles, LayoutStyleKey>;
 /** Style prop for a Animated.View used for a hover view */
-export type AnimatedViewStylePropWithoutLayout = StyleProps;
+export type AnimatedViewStylePropWithoutLayout = TSDraxtyles;
 /** Style-related props for a Drax view */
 export interface DraxViewStyleProps {
     /** Custom style prop to allow animated values */
-    style?: StyleProps | null | StyleProp<ViewStyle> | StyleProp<AnimatedStyle<StyleProp<ViewStyle>>>;
+    style?: TSDraxtyles;
     /** Additional view style applied while this view is not being dragged or released */
-    dragInactiveStyle?: StyleProps;
+    dragInactiveStyle?: TSDraxtyles;
     /** Additional view style applied while this view is being dragged */
-    draggingStyle?: StyleProps;
+    draggingStyle?: TSDraxtyles;
     /** Additional view style applied while this view is being dragged over a receiver */
-    draggingWithReceiverStyle?: StyleProps;
+    draggingWithReceiverStyle?: TSDraxtyles;
     /** Additional view style applied while this view is being dragged NOT over a receiver */
-    draggingWithoutReceiverStyle?: StyleProps;
+    draggingWithoutReceiverStyle?: TSDraxtyles;
     /** Additional view style applied while this view has just been released from a drag */
-    dragReleasedStyle?: StyleProps;
+    dragReleasedStyle?: TSDraxtyles;
     /** Additional view style applied to the hovering copy of this view during drag/release */
     hoverStyle?: AnimatedViewStylePropWithoutLayout;
     /** Additional view style applied to the hovering copy of this view while dragging */
@@ -589,15 +607,15 @@ export interface DraxViewStyleProps {
     /** Additional view style applied to the hovering copy of this view when just released */
     hoverDragReleasedStyle?: AnimatedViewStylePropWithoutLayout;
     /** Additional view style applied while this view is not receiving a drag */
-    receiverInactiveStyle?: StyleProps;
+    receiverInactiveStyle?: TSDraxtyles;
     /** Additional view style applied while this view is receiving a drag */
-    receivingStyle?: StyleProps;
+    receivingStyle?: TSDraxtyles;
     /** Additional view style applied to this view while any other view is being dragged */
-    otherDraggingStyle?: StyleProps;
+    otherDraggingStyle?: TSDraxtyles;
     /** Additional view style applied to this view while any other view is being dragged over a receiver */
-    otherDraggingWithReceiverStyle?: StyleProps;
+    otherDraggingWithReceiverStyle?: TSDraxtyles;
     /** Additional view style applied to this view while any other view is being dragged NOT over a receiver */
-    otherDraggingWithoutReceiverStyle?: StyleProps;
+    otherDraggingWithoutReceiverStyle?: TSDraxtyles;
 }
 /** Custom render function for content of a DraxView */
 export interface DraxViewRenderContent {
@@ -662,8 +680,12 @@ export interface DraxScrollViewProps extends ScrollViewProps, DraxAutoScrollProp
 }
 /** DraxList item being dragged */
 export interface DraxListDraggedItemData<TItem> {
+    /** The list index of the item that is being dragged */
     index: number;
+    /** The item that is being dragged (or undefined if data is not found) */
     item?: TItem;
+    /** Boolean representing an incoming external item dragged into the DraxList */
+    isExternalDrag: boolean;
 }
 /** Event data for when a list item reorder drag action begins */
 export interface DraxListOnItemDragStartEventData<TItem> extends DraxDragEventData, DraxListDraggedItemData<TItem> {
@@ -680,10 +702,16 @@ export interface DraxListOnItemDragEndEventData<TItem> extends DraxMonitorEventD
 }
 /** Event data for when an item is released in a new position within a DraxList, reordering the list */
 export interface DraxListOnItemReorderEventData<TItem> {
-    fromItem: TItem;
+    /** The item that was moved */
+    fromItem?: TItem;
+    /** The list index of the item that was moved */
     fromIndex: number;
-    toItem: TItem;
+    /** The item it was moved onto */
+    toItem?: TItem;
+    /** The list index of the item it was moved onto */
     toIndex: number;
+    /** Boolean representing an incoming external item dragged into the DraxList */
+    isExternalDrag: boolean;
 }
 /** Render function for content of a DraxList item's DraxView */
 export interface DraxListRenderItemContent<TItem> {
@@ -698,7 +726,7 @@ export interface DraxListOnItemReorder<TItem> {
     (eventData: DraxListOnItemReorderEventData<TItem>): void;
 }
 /** Props for a DraxList; extends standard FlatList props */
-export interface DraxListProps<TItem> extends Omit<FlatListPropsWithLayout<TItem>, "renderItem">, DraxAutoScrollProps {
+export interface DraxListProps<TItem> extends Omit<RemoveSharedValues<FlatListPropsWithLayout<TItem>>, "renderItem">, DraxAutoScrollProps {
     /** Unique drax view id, auto-generated if omitted */
     id?: string;
     /** Style prop for the underlying FlatList */
@@ -727,4 +755,20 @@ export interface DraxListProps<TItem> extends Omit<FlatListPropsWithLayout<TItem
     longPressDelay?: number;
     /** Function that receives an item and returns a list of DraxViewProps to apply to that item's DraxView */
     viewPropsExtractor?: (item: TItem) => Partial<DraxViewProps>;
+    /**
+     * Property `renderItem` is not supported in DraxList.
+     * Use `renderItemContent` and `renderItemHoverContent` instead.
+     */
+    renderItem?: never;
+    /** @inheritDoc `originalIndex` and `index` cannot be used in the DraxList data payload, since
+     * it can break it when using external drags
+     */
+    data: FlatListProps<WithoutIndexAndOriginalIndex<TItem>>["data"];
 }
+type UnwrapSharedValue<T> = T extends SharedValue<infer U> ? U : T;
+type RemoveSharedValues<T> = {
+    [K in keyof T]: UnwrapSharedValue<T[K]>;
+};
+type IsAny<T> = 0 extends 1 & T ? true : false;
+type WithoutIndexAndOriginalIndex<T> = IsAny<T> extends true ? T : T extends object ? "index" extends keyof T ? never : "originalIndex" extends keyof T ? never : T : T;
+export {};

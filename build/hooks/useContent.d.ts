@@ -1,10 +1,11 @@
 import React from "react";
 import Reanimated, { AnimatedRef, SharedValue } from "react-native-reanimated";
 import { DraxViewDragStatus, DraxViewProps, Position } from "../types";
-export declare const useContent: ({ draxViewProps: { id, style, dragInactiveStyle, draggingStyle, draggingWithReceiverStyle, draggingWithoutReceiverStyle, dragReleasedStyle, otherDraggingStyle, otherDraggingWithReceiverStyle, otherDraggingWithoutReceiverStyle, receiverInactiveStyle, receivingStyle, children, renderContent, renderHoverContent, isParent, ...props }, viewRef, }: {
+export declare const useContent: ({ draxViewProps: { id, style, dragInactiveStyle, draggingStyle, draggingWithReceiverStyle, draggingWithoutReceiverStyle, dragReleasedStyle, otherDraggingStyle, otherDraggingWithReceiverStyle, otherDraggingWithoutReceiverStyle, receiverInactiveStyle, receivingStyle, children, renderContent, renderHoverContent, isParent, scrollPositionOffset, ...props }, viewRef, }: {
     draxViewProps: DraxViewProps & {
         id: string;
         hoverPosition: SharedValue<Position>;
+        scrollPositionOffset?: Position;
     };
     viewRef?: AnimatedRef<Reanimated.View>;
 }) => {

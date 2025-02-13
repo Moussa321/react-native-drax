@@ -11,7 +11,7 @@ const useMeasurements = ({ onMeasure, registration, id, parent: parentProp, scro
     // This view's measurements, for reference.
     const measurementsRef = (0, react_1.useRef)(undefined);
     // Connect with Drax.
-    const { updateViewMeasurements, parent: contextParent, registerView, unregisterView, rootViewRef, } = (0, useDraxContext_1.useDraxContext)();
+    const { updateViewMeasurements, parent: contextParent, registerView, unregisterView, rootViewRef, getAbsoluteViewData, } = (0, useDraxContext_1.useDraxContext)();
     // Identify Drax parent view (if any) from context or prop override.
     const parent = parentProp ?? contextParent;
     const parentId = parent?.id;
@@ -26,6 +26,18 @@ const useMeasurements = ({ onMeasure, registration, id, parent: parentProp, scro
     // Build a callback which will report our measurements to Drax context,
     // onMeasure, and an optional measurement handler.
     const buildMeasureCallback = (0, react_1.useCallback)((measurementHandler) => (x, y, width, height) => {
+        const parentData = getAbsoluteViewData(parent?.id);
+        /** @todo Remove workaround for the web */
+        const webOffset = react_native_1.Platform.select({
+            web: {
+                x: parentData?.scrollPosition?.value.x || 0,
+                y: parentData?.scrollPosition?.value.y || 0,
+            },
+            default: {
+                x: 0,
+                y: 0,
+            },
+        });
         /*
          * In certain cases (on Android), all of these values can be
          * undefined when the view is not on screen; This should not
@@ -37,8 +49,8 @@ const useMeasurements = ({ onMeasure, registration, id, parent: parentProp, scro
             ? undefined
             : {
                 height,
-                x: x,
-                y: y,
+                x: x + webOffset.x,
+                y: y + webOffset.y,
                 width: width,
             };
         measurementsRef.current = measurements;
@@ -101,9 +113,6 @@ const useMeasurements = ({ onMeasure, registration, id, parent: parentProp, scro
     return {
         onLayout,
         viewRef,
-        parentViewRef,
-        measurementsRef,
-        measureWithHandler,
     };
 };
 exports.useMeasurements = useMeasurements;

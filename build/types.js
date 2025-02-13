@@ -12,7 +12,7 @@ const isWithCancelledFlag = (something) => typeof something === "object" &&
     something !== null &&
     typeof something.cancelled === "boolean";
 exports.isWithCancelledFlag = isWithCancelledFlag;
-/** Preset values for specifying snapback targets without a Position */
+/** Preset values for specifying snap targets without a Position */
 var DraxSnapbackTargetPreset;
 (function (DraxSnapbackTargetPreset) {
     DraxSnapbackTargetPreset[DraxSnapbackTargetPreset["Default"] = 0] = "Default";

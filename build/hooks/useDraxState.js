@@ -7,7 +7,6 @@ exports.useDraxState = exports.actions = void 0;
 const lodash_isequal_1 = __importDefault(require("lodash.isequal"));
 const react_1 = require("react");
 const typesafe_actions_1 = require("typesafe-actions");
-const params_1 = require("../params");
 const types_1 = require("../types");
 /** Create the initial empty view state data for a newly registered view. */
 const createInitialViewState = () => ({
@@ -21,7 +20,6 @@ const createInitialViewState = () => ({
     receiveOffset: undefined,
     receiveOffsetRatio: undefined,
     receivingDrag: undefined,
-    hoverPosition: params_1.INITIAL_REANIMATED_POSITION,
 });
 /** Create an initial empty Drax state. */
 const createInitialState = () => ({

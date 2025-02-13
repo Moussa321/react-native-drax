@@ -70,7 +70,6 @@ const DraxListUnforwarded = <T extends unknown>(
 		itemsDraggable = true,
 		lockItemDragsToMainAxis = false,
 		longPressDelay = defaultListItemLongPressDelay,
-		experimentalItemLayoutAnimation,
 		...flatListProps
 	} = props;
 

@@ -37,14 +37,17 @@ export declare const useDraxRegistry: (stateDispatch: DraxStateDispatch) => {
     };
     getHoverItems: (viewIds: string[]) => ({
         scrollPosition: import("react-native-reanimated").SharedValue<Position> | undefined;
+        scrollPositionOffset: Position | undefined;
         parentId?: string;
         protocol: DraxProtocol;
         measurements?: DraxViewMeasurements;
+        hoverMeasurements?: DraxViewMeasurements;
         id: string;
     } | undefined)[];
     registerView: (payload: RegisterViewPayload) => void;
     updateViewProtocol: (payload: UpdateViewProtocolPayload) => void;
     updateViewMeasurements: (payload: UpdateViewMeasurementsPayload) => void;
+    updateHoverViewMeasurements: (payload: UpdateViewMeasurementsPayload) => void;
     resetReceiver: () => void;
     resetDrag: (snapbackTarget?: DraxSnapbackTarget) => void;
     startDrag: (payload: StartDragPayload) => {

@@ -43,7 +43,7 @@ const startPositionInitialValue = {
 };
 const DraxProvider = ({ debug = false, style = styles.provider, children, }) => {
     const { getViewState, getTrackingStatus, getAllViewIds, dispatch } = (0, hooks_1.useDraxState)();
-    const { getAbsoluteViewData, getTrackingDragged, getTrackingReceiver, getTrackingMonitorIds, getTrackingMonitors, getDragPositionData, findMonitorsAndReceiver, getHoverItems, registerView, updateViewProtocol, updateViewMeasurements, resetReceiver, resetDrag, startDrag, updateDragPosition, updateReceiver, setMonitorIds, unregisterView, getReleaseViews, } = (0, hooks_1.useDraxRegistry)(dispatch);
+    const { getAbsoluteViewData, getTrackingDragged, getTrackingReceiver, getTrackingMonitorIds, getTrackingMonitors, getDragPositionData, findMonitorsAndReceiver, getHoverItems, registerView, updateViewProtocol, updateViewMeasurements, updateHoverViewMeasurements, resetReceiver, resetDrag, startDrag, updateDragPosition, updateReceiver, setMonitorIds, unregisterView, getReleaseViews, } = (0, hooks_1.useDraxRegistry)(dispatch);
     const rootViewRef = (0, react_1.useRef)(null);
     const dragPositionDataSV = (0, react_native_reanimated_1.useSharedValue)(undefined);
     const startPosition = (0, react_native_reanimated_1.useSharedValue)(startPositionInitialValue);
@@ -75,6 +75,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                 grabOffset: dragged.tracking.grabOffset,
                 grabOffsetRatio: dragged.tracking.grabOffsetRatio,
                 hoverPosition: dragged.tracking.hoverPosition.value,
+                data: dragged.data,
             };
             // Prepare base drag event data.
             const dragEventData = {
@@ -105,6 +106,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                     payload: receiver.data.protocol.receiverPayload,
                     receiveOffset: trackingReceiver.receiveOffset,
                     receiveOffsetRatio: trackingReceiver.receiveOffsetRatio,
+                    data: receiver.data,
                 };
                 // Add receiver data to monitor event stub.
                 monitorEventDataStub.receiver = eventDataReceiver;
@@ -133,6 +135,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                                 receiveOffset: oldReceiver.tracking.receiveOffset,
                                 receiveOffsetRatio: oldReceiver.tracking
                                     .receiveOffsetRatio,
+                                data: oldReceiver.data,
                             },
                         };
                         // Call the protocol event callbacks for exiting the old receiver...
@@ -167,6 +170,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                         payload: oldReceiver.data.protocol.receiverPayload,
                         receiveOffset: oldReceiver.tracking.receiveOffset,
                         receiveOffsetRatio: oldReceiver.tracking.receiveOffsetRatio,
+                        data: oldReceiver.data,
                     },
                 };
                 // Call the protocol event callbacks for exiting the old receiver.
@@ -409,6 +413,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                 grabOffset: dragged.tracking.grabOffset,
                 grabOffsetRatio: dragged.tracking.grabOffsetRatio,
                 hoverPosition: dragged.tracking.hoverPosition.value,
+                data: draggedData,
             };
             // Get data for receiver view (if any) before we reset.
             const receiver = getTrackingReceiver();
@@ -424,8 +429,8 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                     id: receiver.id,
                     parentId: receiver.data.parentId,
                     payload: receiver.data.protocol.receiverPayload,
-                    receiveOffset: receiver.tracking.receiveOffset,
-                    receiveOffsetRatio: receiver.tracking.receiveOffsetRatio,
+                    ...receiver.tracking,
+                    data: receiver.data,
                 };
                 const eventData = {
                     dragAbsolutePosition,
@@ -487,6 +492,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                     payload: receiver.data.protocol.receiverPayload,
                     receiveOffset: receiver.tracking.receiveOffset,
                     receiveOffsetRatio: receiver.tracking.receiveOffsetRatio,
+                    data: receiver.data,
                 };
                 const receivedDragExitEventData = {
                     ...eventData,
@@ -607,6 +613,7 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
                     dragTranslationRatio,
                     parentId: draggedData.parentId,
                     payload: draggedData.protocol.dragPayload,
+                    data: draggedData,
                 },
             };
             draggedData.protocol.onDragStart?.(eventData);
@@ -690,12 +697,13 @@ const DraxProvider = ({ debug = false, style = styles.provider, children, }) => 
         unregisterView,
         updateViewProtocol,
         updateViewMeasurements,
+        updateHoverViewMeasurements,
         handleGestureEvent,
         handleGestureStateChange,
         rootViewRef,
     };
     const allViewStates = (0, react_1.useMemo)(() => getAllViewIds(), [getAllViewIds]);
-    const hoverViews = (0, react_1.useMemo)(() => getHoverItems(allViewStates).map((viewData, index) => viewData && (react_1.default.createElement(HoverView_1.ReanimatedHoverView, { key: viewData.id || index, scrollPosition: viewData?.scrollPosition, ...(viewData?.protocol || {}), id: viewData.id, hoverPosition: viewData?.protocol.hoverPosition }))), [allViewStates, getHoverItems]);
+    const hoverViews = (0, react_1.useMemo)(() => getHoverItems(allViewStates).map((viewData, index) => viewData && (react_1.default.createElement(HoverView_1.HoverView, { key: viewData.id || index, ...(viewData?.protocol || {}), id: viewData.id, scrollPosition: viewData?.scrollPosition, scrollPositionOffset: viewData?.scrollPositionOffset }))), [allViewStates, getHoverItems]);
     return (react_1.default.createElement(DraxContext_1.DraxContext.Provider, { value: contextValue },
         react_1.default.createElement(react_native_1.View, { style: style, ref: rootViewRef },
             children,

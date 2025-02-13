@@ -28,3 +28,4 @@ var DraxSubprovider_1 = require("./DraxSubprovider");
 Object.defineProperty(exports, "DraxSubprovider", { enumerable: true, get: function () { return DraxSubprovider_1.DraxSubprovider; } });
 var DraxView_1 = require("./DraxView");
 Object.defineProperty(exports, "DraxView", { enumerable: true, get: function () { return DraxView_1.DraxView; } });
+__exportStar(require("./hooks"), exports);

@@ -33,7 +33,7 @@ const useStatus_1 = require("./useStatus");
 const DraxSubprovider_1 = require("../DraxSubprovider");
 const transform_1 = require("../transform");
 const types_1 = require("../types");
-const useContent = ({ draxViewProps: { id, style, dragInactiveStyle, draggingStyle, draggingWithReceiverStyle, draggingWithoutReceiverStyle, dragReleasedStyle, otherDraggingStyle, otherDraggingWithReceiverStyle, otherDraggingWithoutReceiverStyle, receiverInactiveStyle, receivingStyle, children, renderContent, renderHoverContent, isParent, ...props }, viewRef, }) => {
+const useContent = ({ draxViewProps: { id, style, dragInactiveStyle, draggingStyle, draggingWithReceiverStyle, draggingWithoutReceiverStyle, dragReleasedStyle, otherDraggingStyle, otherDraggingWithReceiverStyle, otherDraggingWithoutReceiverStyle, receiverInactiveStyle, receivingStyle, children, renderContent, renderHoverContent, isParent, scrollPositionOffset, ...props }, viewRef, }) => {
     const { getTrackingDragged, getTrackingReceiver, getAbsoluteViewData } = (0, useDraxContext_1.useDraxContext)();
     const { dragStatus, receiveStatus, anyDragging, anyReceiving } = (0, useStatus_1.useStatus)({
         id,
@@ -43,6 +43,11 @@ const useContent = ({ draxViewProps: { id, style, dragInactiveStyle, draggingSty
         ...props,
     });
     const dragged = getTrackingDragged();
+    const trackingReleasedDraggedRef = (0, react_1.useRef)({});
+    (0, react_1.useEffect)(() => {
+        if (dragged && dragged.id === id)
+            trackingReleasedDraggedRef.current = dragged;
+    }, [dragged, id]);
     const receiver = getTrackingReceiver();
     const draggedData = getAbsoluteViewData(dragged?.id);
     // Get full render props for non-hovering view content.
@@ -52,16 +57,22 @@ const useContent = ({ draxViewProps: { id, style, dragInactiveStyle, draggingSty
         const dimensions = measurements && (0, math_1.extractDimensions)(measurements);
         return {
             viewState: {
+                data: viewData,
                 dragStatus,
                 receiveStatus,
-                hoverPosition: props.hoverPosition,
                 ...dragged?.tracking,
+                releasedDragTracking: trackingReleasedDraggedRef.current
+                    ?.tracking && {
+                    ...trackingReleasedDraggedRef.current.tracking,
+                },
                 receivingDrag: receiveStatus !== types_1.DraxViewReceiveStatus.Receiving ||
-                    !receiver?.id
+                    !receiver?.id ||
+                    !draggedData
                     ? undefined
                     : {
                         id: receiver?.id,
                         payload: draggedData?.protocol.dragPayload,
+                        data: draggedData,
                     },
             },
             trackingStatus: { dragging: anyDragging, receiving: anyReceiving },
@@ -173,11 +184,13 @@ const useContent = ({ draxViewProps: { id, style, dragInactiveStyle, draggingSty
             transform: [
                 {
                     translateX: props.hoverPosition?.value?.x -
-                        (props.scrollPosition?.value?.x || 0),
+                        ((props.scrollPosition?.value?.x || 0) -
+                            (scrollPositionOffset?.x || 0)),
                 },
                 {
                     translateY: props.hoverPosition?.value?.y -
-                        (props.scrollPosition?.value?.y || 0),
+                        ((props.scrollPosition?.value?.y || 0) -
+                            (scrollPositionOffset?.y || 0)),
                 },
                 ...(combinedStyle?.transform || []),
             ],
