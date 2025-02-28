@@ -1,8 +1,10 @@
 node_modules
 yarn-error.log
-build/
 
 .idea/
 .*.swp
 .vscode/
+yarn.lock
+package-lock.json
+
 
